@@ -14,5 +14,4 @@ bcrypt
 face-recognition
 opencv-python-headless
 gunicorn
-email
 smtplib
