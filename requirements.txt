@@ -14,4 +14,8 @@ bcrypt
 face-recognition
 opencv-python-headless
 gunicorn
+<<<<<<< HEAD
 smtplib
+=======
+
+>>>>>>> 04214b2aa80d026b614e1fe4936795070c3642ed
