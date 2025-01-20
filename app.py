@@ -105,7 +105,7 @@ def combined_detection(email):
             face_locations = face_recognition.face_locations(rgb_frame)
             count += 1
 
-            if count % 2 == 0 and face_locations:
+            if count % 5 == 0 and face_locations:
                 face_landmarks_list = face_recognition.face_landmarks(rgb_frame, face_locations)
 
                 for face_landmarks in face_landmarks_list:
