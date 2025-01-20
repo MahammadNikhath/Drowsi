@@ -105,7 +105,7 @@ def combined_detection(email):
             face_locations = face_recognition.face_locations(rgb_frame)
             count += 1
 
-            if count % 5 == 0 and face_locations:
+            if count % 2 == 0 and face_locations:
                 face_landmarks_list = face_recognition.face_landmarks(rgb_frame, face_locations)
 
                 for face_landmarks in face_landmarks_list:
@@ -128,7 +128,7 @@ def combined_detection(email):
                     if eye_flag or mouth_flag:
                         score += 1  # Increase score faster
                     else:
-                        score -= 2  # Decrease score more slowly
+                        score -= 4  # Decrease score more slowly
                         if score < 0:
                             score = 0
 
@@ -203,7 +203,7 @@ def combined_detection(email):
             cv2.putText(image_bgr, f"Score: {score}", (10, image_bgr.shape[0] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-            if score >= 5:
+            if score >= 3:
                 cv2.putText(image_bgr, "DROWSY!", (image_bgr.shape[1] - 200, 50),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                 head_pose_alert = True
