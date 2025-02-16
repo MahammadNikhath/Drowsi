@@ -19,12 +19,13 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import re
+from scipy.signal import medfilt
 
 
 
 # Initialize Flask app
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 # Initialize session
 app.config['SECRET_KEY'] = 'your_secret_key'  # Set your own secret key
 app.config['SESSION_TYPE'] = 'filesystem'
@@ -63,18 +64,37 @@ def eye_aspect_ratio(eye):
 
 # Mouth Aspect Ratio (MAR)
 def mouth_aspect_ratio(mouth):
-    A = distance.euclidean(mouth[2], mouth[10])
-    B = distance.euclidean(mouth[4], mouth[8])
-    C = distance.euclidean(mouth[0], mouth[6])
-    mar = (A + B) / (2.0 * C)
+
+    A = distance.euclidean(mouth[3], mouth[9])
+    B = distance.euclidean(mouth[2], mouth[10])
+    C = distance.euclidean(mouth[4], mouth[8])
+    D = distance.euclidean(mouth[0], mouth[6])
+    mar = (A + B + C) / (2.0 * D)
     return mar
 
 # Real-time webcam processing with combined head pose and drowsiness detection
 def combined_detection(email):
     EYE_AR_THRESH = 0.25
-    MOUTH_AR_THRESH = 0.6
+    MOUTH_AR_THRESH = 0.42
     score = 0
     count = 0
+    ear_history = []
+    EAR_WINDOW = 10
+    blinks = 0
+    blink_start = None
+    BLINK_THRESHOLD = 3 
+    BLINK_DURATION = 3
+    YAWN_THRESHOLD = 6
+    yawn_count = 0
+    last_yawn_alert = 0  
+    YAWN_ALERT_DELAY = 5
+
+    if len(ear_history) > EAR_WINDOW:
+        ear_history = ear_history[-EAR_WINDOW:]
+
+    head_pose_timer = None
+    ALERT_DELAY = 5 #seconds
+    ALERT_DELAY1 = 8 #seconds
 
     while cap.isOpened():
         try:
@@ -105,33 +125,75 @@ def combined_detection(email):
             face_locations = face_recognition.face_locations(rgb_frame)
             count += 1
 
-            if count % 5 == 0 and face_locations:
+            if face_locations:
                 face_landmarks_list = face_recognition.face_landmarks(rgb_frame, face_locations)
 
                 for face_landmarks in face_landmarks_list:
                     left_eye = np.array(face_landmarks['left_eye'])
                     right_eye = np.array(face_landmarks['right_eye'])
                     mouth = np.array(face_landmarks['bottom_lip'])
+                    print(f"Bottom Lip Landmarks: {face_landmarks['bottom_lip']}")
 
                     # Calculate EAR and MAR
                     left_ear = eye_aspect_ratio(left_eye)
                     right_ear = eye_aspect_ratio(right_eye)
                     ear = (left_ear + right_ear) / 2.0
-                    mar = mouth_aspect_ratio(mouth)
+                    ear_history.append(ear)
+                    if len(ear_history) > EAR_WINDOW:
+                         ear_history.pop(0)
+                    
+                    adaptive_threshold = max(0.2, np.mean(ear_history) * 0.8)
+                    eye_flag = ear < adaptive_threshold
+
+                    #mar = mouth_aspect_ratio(mouth)
 
                     # Check if eyes are closed
-                    eye_flag = ear < EYE_AR_THRESH
+                    #eye_flag = ear < EYE_AR_THRESH
                     # Check if mouth is open
-                    mouth_flag = mar > MOUTH_AR_THRESH
+                    #mouth_flag = mar > MOUTH_AR_THRESH
+
+
 
                     # Update score more responsively
-                    if eye_flag or mouth_flag:
-                        score += 1  # Increase score faster
+                    if eye_flag :
+                        score += 1
+                    #elif mouth_flag:
+                        #score +=1  # Increase score faster
                     else:
-                        score -= 4  # Decrease score more slowly
-                        if score < 0:
-                            score = 0
+                        score -= 1  # Decrease score more slowly
+                    if score < 0:
+                        score = 0
 
+                    if eye_flag:
+                        if blink_start is None:
+                            blink_start = time.time()
+                    else:
+                        if blink_start and time.time() - blink_start > BLINK_DURATION / 30:
+                            blinks += 1
+                        blink_start = None
+                    cv2.putText(image_bgr, f"Blinks/min: {blinks}", (20, 80), 
+            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+                    
+                    mar = mouth_aspect_ratio(mouth)
+                    print(f"MAR: {mar}")
+                    mouth_flag = mar > MOUTH_AR_THRESH
+
+                '''if -10 < y < 10:
+                        if mouth_flag:
+                            yawn_count += 1
+                        #print(f"Yawning detected! Count: {yawn_count}")
+                        else:
+                            yawn_count -= 1
+                    if yawn_count < 0:
+                        yawn_count = 0
+                    current_time = time.time() '''
+                    
+            
+
+               
+            y = 0  
+            x = 0
+            z = 0
             # Check Head Pose
             head_pose_alert = False
             if results.multi_face_landmarks:
@@ -179,17 +241,47 @@ def combined_detection(email):
                     # See where the user's head is tilting
                     if y < -10:
                         text = "Looking Left"
+                        if head_pose_timer is None:
+                            head_pose_timer = time.time()
+                        elif time.time() - head_pose_timer > ALERT_DELAY1:
+                            head_pose_alert = True
+                            cv2.putText(image_bgr, "Distracted", (image_bgr.shape[1] - 200, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                     elif y > 10:
                         text = "Looking Right"
+                        if head_pose_timer is None:
+                            head_pose_timer = time.time()
+                        elif time.time() - head_pose_timer > ALERT_DELAY1:
+                            head_pose_alert = True
+                            cv2.putText(image_bgr, "Distracted", (image_bgr.shape[1] - 200, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                     elif x < -10:
                         text = "Looking Down"
-                        head_pose_alert = True
+                        if head_pose_timer is None:
+                            head_pose_timer = time.time()
+                        elif time.time() - head_pose_timer > ALERT_DELAY:
+                            head_pose_alert = True
+                            cv2.putText(image_bgr, "focus on the steering", (image_bgr.shape[1] - 400, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                     elif x > 10:
                         text = "Looking Up"
-                        head_pose_alert = True
+                        if head_pose_timer is None:
+                            head_pose_timer = time.time()
+                        elif time.time() - head_pose_timer > ALERT_DELAY:
+                            head_pose_alert = True
+                            cv2.putText(image_bgr, "focus on the steering", (image_bgr.shape[1] - 400, 150),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                     else:
                         text = "Forward"
+                        head_pose_timer = None
 
+                    if -10 < y < 10:
+                        if mouth_flag:
+                             yawn_count += 1
+                        else:
+                             yawn_count -= 1
+                    if yawn_count < 0:
+                         yawn_count = 0
                     
 
                     # Display the nose direction
@@ -202,11 +294,23 @@ def combined_detection(email):
             # Display drowsiness score and warning
             cv2.putText(image_bgr, f"Score: {score}", (10, image_bgr.shape[0] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+            
 
-            if score >= 3:
+            if score >= 6:
                 cv2.putText(image_bgr, "DROWSY!", (image_bgr.shape[1] - 200, 50),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
                 head_pose_alert = True
+
+            (text_width, text_height), _ = cv2.getTextSize(f"Score: {score}", cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+
+            cv2.putText(image_bgr, f"Yawn: {yawn_count}", (10, image_bgr.shape[0] - 40),  # Move up
+            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+            if yawn_count >= 6 :
+                cv2.putText(image_bgr, "Continuous Yawning", (image_bgr.shape[1] - 300, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+                head_pose_alert = True
+
+
 
             # Check for cell phone detection
             results = model(image)
@@ -216,6 +320,8 @@ def combined_detection(email):
                     if(names[int(c)] == "cell phone"):
                         print("Cell phone detected!")
                         head_pose_alert = True
+                        cv2.putText(image_bgr, "Mobile Phone  detected", (image_bgr.shape[1] - 400, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
            # Inside your combined_detection function
 
             if head_pose_alert:
@@ -383,6 +489,12 @@ def index():
     return render_template('index.html')  # This will render the index page
  # This will render the dashboard page
 
+@socketio.on('connect')
+def handle_connect():
+    print("Client connected!")
+
+def send_alert():
+    socketio.emit('alert', {'message': '🚨 Continuous Yawning Detected!'}, namespace='/')
 
 
 

@@ -99,6 +99,18 @@
             object-fit: cover;
         }
 
+        /* Alert Box */
+        #alert-box {
+            display: none;
+            padding: 20px;
+            background-color: red;
+            color: white;
+            font-size: 20px;
+            text-align: center;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
         /* Status Message */
         #status {
             font-size: 1.5rem;
@@ -278,36 +290,35 @@
             <a href="/" class="btn">Home</a>
             <a href="/profile" class="navlink">Profile</a>
             <a href="/logout" class="navlink">Logout</a>
-        
         </div>
     </div>
 
-
     <div class="container">
-        <div class="alert" id="alert"></div>
+        <!-- Alert Box -->
+        <div id="alert-box" style="display: none; padding: 20px; background-color: red; color: white; font-size: 20px;">
+            🚨 Continuous Yawning Detected!
+        </div>
+
         <h1>Real-Time Head Pose & Drowsiness Detection</h1>
 
-        
-        <img src="{{ url_for('video') }}" height="400px" width="100%"  />
-    
+        <!-- Video Feed -->
+        <img src="{{ url_for('video') }}" height="400px" width="100%" />
     </div>
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+
     <script>
-       
-        const startBtn = document.getElementById('startBtn');
-        const statusText = document.getElementById('status');
-        const alertBox = document.getElementById('alert');
-        const video = document.getElementById('videoFeed');
-    
-
-
-        const socket = io.connect('http://' + document.domain + ':' + location.port + '/alert');
-        socket.on('alert', (data) => {
-            document.getElementById('alert').innerHTML = "Warning! Drowsiness or cell phone or head Detected!";
-            console.log(data.message); // Log the alert message to the console
-
+        const socket = io.connect('http://127.0.0.1:5000');
+        socket.on('connect', function() {
+    console.log("Connected to WebSocket Server");
+});
+        socket.on('alert', function(data) {
+            console.log("Received alert:", data.message);
+            const alertBox = document.getElementById("alert-box");
+            alertBox.style.display = "block";
+            alertBox.innerText = data.message;
+            setTimeout(function() {
+                alertBox.style.display = "none";
+            }, 5000); // Hide the alert after 5 seconds
         });
     </script>
-    
 </body>
 </html>
